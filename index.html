@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <meta name="theme-color" content="#0d0d1a"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <title>OfertaFlash ⚡</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;900&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0d0d1a; font-family: 'DM Sans', sans-serif; color: #fff; }
+    textarea, input { font-family: 'DM Sans', sans-serif; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #0d0d1a; }
+    ::-webkit-scrollbar-thumb { background: #6C63FF40; border-radius: 4px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const LOJAS = [
+  { nome: "Amazon", cor: "#FF9900", emoji: "📦", dominio: "amazon" },
+  { nome: "Shopee", cor: "#EE4D2D", emoji: "🛍️", dominio: "shopee" },
+  { nome: "Mercado Livre", cor: "#FFE600", emoji: "🛒", dominio: "mercadolivre" },
+  { nome: "Magazine Luiza", cor: "#0086FF", emoji: "🏪", dominio: "magazineluiza" },
+  { nome: "Americanas", cor: "#E60014", emoji: "🔴", dominio: "americanas" },
+  { nome: "Outro", cor: "#6C63FF", emoji: "🔗", dominio: "" },
+];
+
+function detectarLoja(url) {
+  const u = url.toLowerCase();
+  return LOJAS.find(l => l.dominio && u.includes(l.dominio)) || LOJAS[LOJAS.length - 1];
+}
+
+function formatarMoeda(v) {
+  const n = parseFloat(String(v).replace(",", "."));
+  if (isNaN(n)) return v;
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function calcDesconto(original, oferta) {
+  const o = parseFloat(String(original).replace(",", "."));
+  const f = parseFloat(String(oferta).replace(",", "."));
+  if (!o || !f || o <= f) return null;
+  return Math.round(((o - f) / o) * 100);
+}
+
+const STEPS = ["link", "dados", "resultado"];
+
+function App() {
+  const [aba, setAba] = React.useState("criar");
+  const [step, setStep] = React.useState("link");
+  const [link, setLink] = React.useState("");
+  const [loja, setLoja] = React.useState(null);
+  const [nome, setNome] = React.useState("");
+  const [precoOriginal, setPrecoOriginal] = React.useState("");
+  const [precoOferta, setPrecoOferta] = React.useState("");
+  const [frete, setFrete] = React.useState("Frete grátis");
+  const [cupom, setCupom] = React.useState("");
+  const [estilo, setEstilo] = React.useState("urgente");
+  const [texto, setTexto] = React.useState("");
+  const [carregando, setCarregando] = React.useState(false);
+  const [copiado, setCopiado] = React.useState(false);
+  const [historico, setHistorico] = React.useState([]);
+
+  const desconto = calcDesconto(precoOriginal, precoOferta);
+
+  function avancarLink() {
+    if (!link.trim()) return;
+    setLoja(detectarLoja(link));
+    setStep("dados");
+  }
+
+  async function gerarTexto() {
+    if (!nome.trim() || !precoOferta.trim()) return;
+    setCarregando(true);
+    setTexto("");
+    const estilos = {
+      urgente: "URGENTE com escassez, use 'CORRE!', 'Só hoje!', 'Acabando!'",
+      economico: "focado em economia, destacando quanto a pessoa vai ECONOMIZAR",
+      simples: "direto e simples, sem exageros",
+      divertido: "descontraído e divertido com trocadilhos",
+    };
+    const prompt = `Você é especialista em marketing de afiliados para grupos de WhatsApp brasileiro.
+Produto: ${nome}
+Loja: ${loja?.nome}
+Preço original: R$ ${precoOriginal}
+Preço da oferta: R$ ${precoOferta}
+${desconto ? `Desconto: ${desconto}%` : ""}
+Frete: ${frete}
+${cupom ? `Cupom: ${cupom}` : ""}
+Link: ${link}
+Estilo: ${estilos[estilo]}
+Crie uma mensagem de oferta para WhatsApp. Use emojis, negrito com *asteriscos*. Inclua o link no final. Máximo 20 linhas. Retorne SOMENTE o texto da mensagem.`;
+
+    try {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      const data = await resp.json();
+      const t = data.content?.map(i => i.text || "").join("") || "";
+      setTexto(t);
+      setHistorico(h => [{ nome, loja, precoOferta, precoOriginal, desconto, texto: t, link, id: Date.now() }, ...h.slice(0, 9)]);
+      setStep("resultado");
+    } catch (e) {
+      setTexto("Erro ao gerar texto. Verifique sua conexão e tente novamente.");
+      setStep("resultado");
+    }
+    setCarregando(false);
+  }
+
+  function reiniciar() {
+    setStep("link"); setLink(""); setLoja(null); setNome("");
+    setPrecoOriginal(""); setPrecoOferta("");
+    setFrete("Frete grátis"); setCupom(""); setTexto(""); setCopiado(false);
+  }
+
+  function copiar() {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(texto).then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 2500); });
+    } else {
+      const el = document.createElement("textarea");
+      el.value = texto; document.body.appendChild(el);
+      el.select(); document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopiado(true); setTimeout(() => setCopiado(false), 2500);
+    }
+  }
+
+  const inputStyle = {
+    width: "100%", background: "#0d0d1a",
+    border: "1.5px solid #ffffff12", borderRadius: 12,
+    padding: "12px 14px", color: "#fff", fontSize: 14,
+    outline: "none", boxSizing: "border-box", fontFamily: "'DM Sans', sans-serif",
+  };
+  const labelStyle = {
+    fontSize: 11, color: "#ffffff50", fontWeight: 700,
+    letterSpacing: 1, marginBottom: 6, display: "block"
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#0d0d1a", fontFamily:"'DM Sans',sans-serif", color:"#fff", maxWidth:430, margin:"0 auto", paddingBottom:80 }}>
+
+      {/* HEADER */}
+      <div style={{ background:"#13131f", padding:"16px 20px", borderBottom:"1px solid #ffffff0d", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:"linear-gradient(135deg,#6C63FF,#FF6584)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>⚡</div>
+          <div>
+            <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:16 }}>Oferta<span style={{ color:"#6C63FF" }}>Flash</span></div>
+            <div style={{ fontSize:10, color:"#ffffff40" }}>Gerador para WhatsApp</div>
+          </div>
+        </div>
+        <div style={{ background:"#6C63FF20", border:"1px solid #6C63FF30", borderRadius:20, padding:"4px 12px", fontSize:11, color:"#a89eff" }}>{historico.length} oferta{historico.length!==1?"s":""}</div>
+      </div>
+
+      {/* ABAS */}
+      <div style={{ display:"flex", background:"#13131f", borderBottom:"1px solid #ffffff08" }}>
+        {[{id:"criar",label:"⚡ Criar"},{id:"historico",label:"📋 Histórico"}].map(a=>(
+          <button key={a.id} onClick={()=>setAba(a.id)} style={{ flex:1, background:"none", border:"none", color:aba===a.id?"#6C63FF":"#ffffff40", padding:"12px 0", fontSize:13, fontWeight:aba===a.id?700:500, cursor:"pointer", borderBottom:aba===a.id?"2px solid #6C63FF":"2px solid transparent" }}>{a.label}</button>
+        ))}
+      </div>
+
+      {aba==="criar" && (
+        <div style={{ padding:"20px 16px" }}>
+
+          {/* STEPS */}
+          <div style={{ display:"flex", alignItems:"center", marginBottom:24 }}>
+            {[{k:"link",n:1,label:"Link"},{k:"dados",n:2,label:"Dados"},{k:"resultado",n:3,label:"Oferta"}].map((s,i)=>{
+              const ativo=step===s.k, feito=STEPS.indexOf(step)>i;
+              return (
+                <div key={s.k} style={{ display:"flex", alignItems:"center", flex:1 }}>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flex:1 }}>
+                    <div style={{ width:30, height:30, borderRadius:"50%", background:feito?"#22c55e":ativo?"#6C63FF":"#ffffff10", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, border:ativo?"2px solid #6C63FF":"none", color:feito||ativo?"#fff":"#ffffff40" }}>{feito?"✓":s.n}</div>
+                    <div style={{ fontSize:10, color:ativo?"#6C63FF":"#ffffff30", marginTop:4 }}>{s.label}</div>
+                  </div>
+                  {i<2&&<div style={{ flex:1, height:2, background:feito?"#22c55e":"#ffffff10", marginBottom:16 }}/>}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* STEP 1 */}
+          {step==="link"&&(
+            <div>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:20, marginBottom:6 }}>Cole seu link 🔗</div>
+              <div style={{ color:"#ffffff50", fontSize:13, marginBottom:20 }}>Cole o link de afiliado do produto.</div>
+              <div style={{ marginBottom:16 }}>
+                <label style={labelStyle}>LINK DO PRODUTO</label>
+                <textarea value={link} onChange={e=>setLink(e.target.value)} placeholder="https://amzn.to/... ou qualquer link de afiliado" rows={3} style={{ ...inputStyle, resize:"none", lineHeight:1.5 }}/>
+              </div>
+              {link&&(
+                <div style={{ background:"#1a1a2e", borderRadius:12, padding:"10px 14px", marginBottom:16, display:"flex", alignItems:"center", gap:10, border:"1px solid #6C63FF20" }}>
+                  <span style={{ fontSize:22 }}>{detectarLoja(link).emoji}</span>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600 }}>{detectarLoja(link).nome}</div>
+                    <div style={{ fontSize:11, color:"#ffffff40" }}>Loja detectada</div>
+                  </div>
+                </div>
+              )}
+              <div style={{ marginBottom:20 }}>
+                <label style={labelStyle}>OU ESCOLHA A LOJA</label>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                  {LOJAS.map(l=>(
+                    <button key={l.nome} onClick={()=>setLoja(l)} style={{ padding:"6px 12px", borderRadius:20, fontSize:12, background:loja?.nome===l.nome?l.cor+"30":"#1a1a2e", border:loja?.nome===l.nome?`1.5px solid ${l.cor}`:"1px solid #ffffff10", color:loja?.nome===l.nome?l.cor:"#ffffff60", cursor:"pointer", fontWeight:loja?.nome===l.nome?700:400 }}>{l.emoji} {l.nome}</button>
+                  ))}
+                </div>
+              </div>
+              <button onClick={avancarLink} disabled={!link.trim()} style={{ width:"100%", padding:"15px 0", background:link.trim()?"linear-gradient(135deg,#6C63FF,#FF6584)":"#1a1a2e", border:"none", borderRadius:14, color:link.trim()?"#fff":"#ffffff30", fontSize:15, fontWeight:700, cursor:link.trim()?"pointer":"not-allowed", boxShadow:link.trim()?"0 8px 24px #6C63FF30":"none" }}>Próximo → Preencher dados</button>
+            </div>
+          )}
+
+          {/* STEP 2 */}
+          {step==="dados"&&(
+            <div>
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
+                <div style={{ width:40, height:40, borderRadius:10, background:(loja?.cor||"#6C63FF")+"20", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>{loja?.emoji}</div>
+                <div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:17 }}>Dados do produto</div>
+                  <div style={{ fontSize:11, color:"#ffffff40" }}>{loja?.nome} · Preencha as informações</div>
+                </div>
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <label style={labelStyle}>NOME DO PRODUTO *</label>
+                <input value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex: Jogo de Lençol 200 Fios King Azul" style={inputStyle}/>
+              </div>
+              <div style={{ display:"flex", gap:10, marginBottom:14 }}>
+                <div style={{ flex:1 }}>
+                  <label style={labelStyle}>PREÇO ORIGINAL</label>
+                  <input value={precoOriginal} onChange={e=>setPrecoOriginal(e.target.value)} placeholder="Ex: 129,90" style={inputStyle}/>
+                </div>
+                <div style={{ flex:1 }}>
+                  <label style={labelStyle}>PREÇO OFERTA *</label>
+                  <input value={precoOferta} onChange={e=>setPrecoOferta(e.target.value)} placeholder="Ex: 79,90" style={inputStyle}/>
+                </div>
+              </div>
+              {desconto&&(
+                <div style={{ background:"#22c55e15", border:"1px solid #22c55e30", borderRadius:10, padding:"8px 14px", marginBottom:14, fontSize:13, color:"#22c55e", fontWeight:700 }}>
+                  🎯 {desconto}% OFF · Economia de {formatarMoeda((parseFloat(precoOriginal.replace(",","."))-parseFloat(precoOferta.replace(",","."))).toString())}
+                </div>
+              )}
+              <div style={{ marginBottom:14 }}>
+                <label style={labelStyle}>FRETE</label>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:8 }}>
+                  {["Frete grátis","Frete grátis Prime","Calcular no site"].map(f=>(
+                    <button key={f} onClick={()=>setFrete(f)} style={{ padding:"6px 12px", borderRadius:20, fontSize:11, background:frete===f?"#22c55e20":"#1a1a2e", border:frete===f?"1.5px solid #22c55e":"1px solid #ffffff10", color:frete===f?"#22c55e":"#ffffff50", cursor:"pointer" }}>{f}</button>
+                  ))}
+                </div>
+                <input value={frete} onChange={e=>setFrete(e.target.value)} placeholder="ou digite o frete..." style={inputStyle}/>
+              </div>
+              <div style={{ marginBottom:20 }}>
+                <label style={labelStyle}>CUPOM (opcional)</label>
+                <input value={cupom} onChange={e=>setCupom(e.target.value.toUpperCase())} placeholder="Ex: LENCOL10" style={inputStyle}/>
+              </div>
+              <div style={{ marginBottom:20 }}>
+                <label style={labelStyle}>ESTILO DO TEXTO</label>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                  {[{id:"urgente",emoji:"🚨",label:"Urgente"},{id:"economico",emoji:"💰",label:"Econômico"},{id:"simples",emoji:"✅",label:"Simples"},{id:"divertido",emoji:"😄",label:"Divertido"}].map(e=>(
+                    <button key={e.id} onClick={()=>setEstilo(e.id)} style={{ flex:1, padding:"10px 6px", borderRadius:12, background:estilo===e.id?"#6C63FF20":"#1a1a2e", border:estilo===e.id?"1.5px solid #6C63FF":"1px solid #ffffff10", color:estilo===e.id?"#a89eff":"#ffffff50", cursor:"pointer", fontSize:11, fontWeight:estilo===e.id?700:400, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                      <span style={{ fontSize:18 }}>{e.emoji}</span>{e.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:10 }}>
+                <button onClick={()=>setStep("link")} style={{ padding:"14px 20px", background:"#1a1a2e", border:"1px solid #ffffff10", borderRadius:14, color:"#ffffff60", cursor:"pointer", fontSize:14 }}>← Voltar</button>
+                <button onClick={gerarTexto} disabled={!nome.trim()||!precoOferta.trim()||carregando} style={{ flex:1, padding:"14px 0", background:nome.trim()&&precoOferta.trim()&&!carregando?"linear-gradient(135deg,#6C63FF,#FF6584)":"#1a1a2e", border:"none", borderRadius:14, color:"#fff", fontSize:14, fontWeight:700, cursor:nome.trim()&&precoOferta.trim()?"pointer":"not-allowed", boxShadow:nome.trim()?"0 8px 24px #6C63FF30":"none" }}>
+                  {carregando?"⏳ Gerando com IA...":"✨ Gerar texto de oferta"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3 */}
+          {step==="resultado"&&(
+            <div>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:20, marginBottom:4 }}>Oferta pronta! 🎉</div>
+              <div style={{ color:"#ffffff50", fontSize:13, marginBottom:20 }}>Copie e cole no seu grupo do WhatsApp.</div>
+              <div style={{ background:"#13131f", borderRadius:14, padding:14, border:"1px solid #6C63FF20", marginBottom:16, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600, marginBottom:2 }}>{nome}</div>
+                  <div style={{ fontSize:11, color:"#ffffff40" }}>{loja?.nome}</div>
+                </div>
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ fontSize:18, fontWeight:900, color:"#22c55e" }}>{formatarMoeda(precoOferta)}</div>
+                  {desconto&&<div style={{ fontSize:11, color:"#ff6b6b" }}>-{desconto}% OFF</div>}
+                </div>
+              </div>
+              <div style={{ background:"#13131f", borderRadius:14, padding:16, border:"1px solid #ffffff08", marginBottom:16, fontSize:13, lineHeight:1.7, color:"#ffffffcc", whiteSpace:"pre-wrap", wordBreak:"break-word", maxHeight:320, overflowY:"auto" }}>
+                {texto}
+              </div>
+              <div style={{ display:"flex", gap:10, marginBottom:12 }}>
+                <button onClick={copiar} style={{ flex:1, padding:"14px 0", background:copiado?"#22c55e":"linear-gradient(135deg,#25D366,#128C7E)", border:"none", borderRadius:14, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", transition:"all .3s" }}>
+                  {copiado?"✅ Copiado!":"📋 Copiar texto"}
+                </button>
+                <button onClick={()=>window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`,"_blank")} style={{ padding:"14px 18px", background:"#25D36620", border:"1px solid #25D36640", borderRadius:14, color:"#25D366", fontSize:20, cursor:"pointer" }}>📤</button>
+              </div>
+              <div style={{ display:"flex", gap:10 }}>
+                <button onClick={()=>setStep("dados")} style={{ flex:1, padding:"12px 0", background:"#1a1a2e", border:"1px solid #ffffff10", borderRadius:14, color:"#ffffff60", cursor:"pointer", fontSize:13 }}>✏️ Editar dados</button>
+                <button onClick={reiniciar} style={{ flex:1, padding:"12px 0", background:"#6C63FF20", border:"1px solid #6C63FF30", borderRadius:14, color:"#a89eff", cursor:"pointer", fontSize:13, fontWeight:700 }}>⚡ Nova oferta</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {aba==="historico"&&(
+        <div style={{ padding:"20px 16px" }}>
+          <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:20, marginBottom:16 }}>📋 Histórico</div>
+          {historico.length===0?(
+            <div style={{ textAlign:"center", padding:"60px 20px", color:"#ffffff30" }}>
+              <div style={{ fontSize:48, marginBottom:12 }}>🛒</div>
+              <div>Nenhuma oferta criada ainda</div>
+            </div>
+          ):historico.map(h=>(
+            <div key={h.id} onClick={()=>{ setNome(h.nome); setLoja(h.loja); setLink(h.link); setPrecoOriginal(h.precoOriginal); setPrecoOferta(h.precoOferta); setTexto(h.texto); setStep("resultado"); setAba("criar"); }} style={{ background:"#13131f", borderRadius:14, padding:14, marginBottom:10, border:"1px solid #ffffff08", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}>
+              <div style={{ width:44, height:44, borderRadius:10, background:(h.loja?.cor||"#6C63FF")+"20", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>{h.loja?.emoji}</div>
+              <div style={{ f
